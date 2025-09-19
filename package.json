@@ -12,5 +12,6 @@
     "build": "react-scripts build",
     "deploy": "gh-pages -d build"
   },
-  "homepage": "https://YOUR_GITHUB_ID.github.io/frontend"
+  "homepage": "https://mj-08.github.io/travel-ai-agent"
 }
+
