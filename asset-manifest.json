@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/travel-ai-agent/static/css/main.3af4ed97.css",
-    "main.js": "/travel-ai-agent/static/js/main.b162bf50.js",
+    "main.js": "/travel-ai-agent/static/js/main.15f4ffde.js",
     "index.html": "/travel-ai-agent/index.html",
     "main.3af4ed97.css.map": "/travel-ai-agent/static/css/main.3af4ed97.css.map",
-    "main.b162bf50.js.map": "/travel-ai-agent/static/js/main.b162bf50.js.map"
+    "main.15f4ffde.js.map": "/travel-ai-agent/static/js/main.15f4ffde.js.map"
   },
   "entrypoints": [
     "static/css/main.3af4ed97.css",
-    "static/js/main.b162bf50.js"
+    "static/js/main.15f4ffde.js"
   ]
 }
