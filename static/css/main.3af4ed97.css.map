@@ -1,0 +1,1 @@
+{"version":3,"file":"static/css/main.3af4ed97.css","mappings":"AAAA,KAGE,kBAAmB,CACnB,aAAc,CAFd,sCAAyC,CADzC,QAIF","sources":["index.css"],"sourcesContent":["body {\r\n  margin: 0;\r\n  font-family: Arial, Helvetica, sans-serif;\r\n  background: #f9fafb;\r\n  color: #111827;\r\n}\r\n"],"names":[],"sourceRoot":""}
