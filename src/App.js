@@ -1,117 +1,38 @@
-import React, { useState, useEffect } from "react";
-import FlightCard from "./components/FlightCard";
-import HotelCard from "./components/HotelCard";
-import Loader from "./components/Loader";
+import React, { useEffect, useState } from "react";
 
-const API_BASE = "https://your-vercel-project.vercel.app/api"; // Vercel 프록시 주소
+/** ===================== 설정 ===================== */
+// 실서비스 시, 본인 Vercel 프록시 도메인으로 변경하세요.
+// 빈 문자열("")이면 Mock Only 모드로 동작합니다.
+const API_BASE = ""; // 예: "https://your-vercel-project.vercel.app/api"
 
-export default function App() {
-  const [query, setQuery] = useState("인천에서 도쿄 왕복, 10월 3일 출발 10월 5일 귀국, 도쿄 2박, 성인 2명");
-  const [loading, setLoading] = useState(false);
-  const [flights, setFlights] = useState([]);
-  const [hotels, setHotels] = useState([]);
-  const [errorMsg, setErrorMsg] = useState("");
+/** ===================== 유틸 ===================== */
+const KRW = (n) => (Number.isFinite(n) ? n.toLocaleString("ko-KR") : "-");
+const minutesToHM = (mins) => {
+  if (!Number.isFinite(mins)) return "-";
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${h}시간 ${m}분`;
+};
+const fmt = (d) => new Date(d).toISOString().slice(0,10);
+const cityForAirport = (code) => ({ HND:"TYO", NRT:"TYO", GMP:"SEL", ICN:"SEL" }[code] || code);
 
-  const runSearch = async () => {
-    setLoading(true);
-    setErrorMsg("");
-
-    try {
-      // 항공 검색
-      const resFlights = await fetch(
-        `${API_BASE}/flights?origin=ICN&destination=HND&departDate=2025-10-03&returnDate=2025-10-05&adults=2`
-      );
-      if (!resFlights.ok) throw new Error("항공편 API 실패");
-      const dataFlights = await resFlights.json();
-      setFlights(dataFlights.data || []);
-
-      // 호텔 검색
-      const resHotels = await fetch(
-        `${API_BASE}/hotels?destination=TYO&checkIn=2025-10-03&checkOut=2025-10-05&adults=2`
-      );
-      if (!resHotels.ok) throw new Error("호텔 API 실패");
-      const dataHotels = await resHotels.json();
-      setHotels(dataHotels.hotels || []);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg(err.message);
-    }
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    runSearch(); // 첫 로드시 자동 실행
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <h1 className="text-2xl font-bold mb-4">여행 AI 에이전트</h1>
-      <textarea
-        className="w-full border rounded p-3 mb-4"
-        rows={3}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <button
-        onClick={runSearch}
-        className="px-4 py-2 bg-indigo-600 text-white rounded"
-        disabled={loading}
-      >
-        {loading ? "검색 중..." : "검색 실행"}
-      </button>
-
-      {loading && <Loader message="항공편과 호텔을 불러오는 중..." />}
-      {errorMsg && <p className="text-red-600 mt-4">⚠️ {errorMsg}</p>}
-
-      <div className="grid md:grid-cols-2 gap-4 mt-6">
-        <div>
-          <h2 className="text-lg font-semibold mb-2">항공편 결과</h2>
-          {flights.length > 0 ? (
-            <div className="space-y-2 max-h-[500px] overflow-auto">
-              {flights.map((f, idx) => (
-                <FlightCard key={idx} flight={{
-                  airline: { name: f.validatingAirlineCodes?.[0] || "항공사" },
-                  origin: f.itineraries?.[0]?.segments?.[0]?.departure?.iataCode || "ICN",
-                  destination: f.itineraries?.[0]?.segments?.slice(-1)[0]?.arrival?.iataCode || "HND",
-                  departTime: f.itineraries?.[0]?.segments?.[0]?.departure?.at?.slice(11, 16) || "--:--",
-                  returnTime: f.itineraries?.[1]?.segments?.slice(-1)[0]?.arrival?.at?.slice(11, 16) || "--:--",
-                  duration: 140,
-                  stops: (f.itineraries?.[0]?.segments?.length || 1) - 1,
-                  baggageIncluded: true,
-                  price: f.price?.grandTotal ? Math.round(+f.price.grandTotal) : 0,
-                }} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">검색 결과 없음</p>
-          )}
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold mb-2">호텔 결과</h2>
-          {hotels.length > 0 ? (
-            <div className="space-y-2 max-h-[500px] overflow-auto">
-              {hotels.map((h, idx) => (
-                <HotelCard key={idx} hotel={{
-                  name: h.name || `호텔 ${idx + 1}`,
-                  area: h.zoneName || "도쿄",
-                  stars: 4,
-                  rating: h.rating || 4.3,
-                  reviews: 200 + idx * 15,
-                  refundable: true,
-                  checkIn: "2025-10-03",
-                  nights: 2,
-                  pricePerNight: h.minRate || 100000,
-                  taxesPerNight: 15000,
-                }} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">검색 결과 없음</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+/** ===================== 자연어 파서 ===================== */
+function parseKoreanDate(str){
+  if(!str) return null;
+  const y = new Date().getFullYear();
+  const a = str.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const b = str.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  const c = str.match(/(\d{1,2})[./-](\d{1,2})/);
+  if(a) return new Date(+a[1], +a[2]-1, +a[3]);
+  if(b) return new Date(y, +b[1]-1, +b[2]);
+  if(c) return new Date(y, +c[1]-1, +c[2]);
+  return null;
 }
+
+function parseNatural(textRaw){
+  const text = (textRaw||"").trim();
+  const origin = /김포/.test(text) ? "GMP" : "ICN";
+  const destination = /나리타/.test(text) ? "NRT" : /하네다|도쿄/.test(text) ? "HND" : "HND";
+  const adults = (()=>{ const m = text.match(/(성인|어른|adults?)\s*(\d+)/i); return m? +m[2] : 1; })();
+  const nights = (()=>{ const m = text.match(/(\d+)\s*박/); return m? +m[1] : 2; })();
+
+  // 날짜 파싱: "10월 3일 출발 10월 5일
