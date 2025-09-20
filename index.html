@@ -10,21 +10,27 @@
     .card{ @apply bg-white border border-gray-200 rounded-2xl p-4 shadow-sm; }
     .pill{ @apply border border-gray-200 bg-gray-50 rounded-xl p-3; }
     .badge{ @apply text-xs px-2 py-0.5 rounded-full; }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #6366f1; /* indigo */
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-6xl mx-auto p-6">
     <!-- 헤더 -->
-    <header class="mb-6 flex items-center justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-bold">여행 AI Agent</h1>
-        <p class="text-gray-600">자연어로 요청하고, <b>최저가 · 최단시간 · 최저환승</b> 3가지를 추천합니다</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-sm text-gray-500">API Base</label>
-        <input id="apiBase" class="w-80 px-3 py-2 border rounded-lg"
-               placeholder="https://<your-vercel>.vercel.app/api" />
-      </div>
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold">여행 AI Agent</h1>
+      <p class="text-gray-600">자연어로 요청하고, <b>최저가 · 최단시간 · 최저환승</b> 3가지를 추천합니다</p>
     </header>
 
     <!-- 입력 영역 -->
@@ -48,23 +54,6 @@
 
     <!-- 추천 카드 -->
     <section id="recommend" class="grid md:grid-cols-3 gap-4 mt-6"></section>
-
-    <!-- 후보 리스트 (검증용) -->
-    <section id="lists" class="card mt-6 hidden">
-      <details open>
-        <summary class="font-semibold">후보 리스트(검증용)</summary>
-        <div class="grid md:grid-cols-2 gap-4 mt-3">
-          <div>
-            <div class="font-semibold">항공 후보</div>
-            <div id="flightList" class="mt-2 space-y-2 max-h-96 overflow-auto"></div>
-          </div>
-          <div>
-            <div class="font-semibold">호텔 후보</div>
-            <div id="hotelList" class="mt-2 space-y-2 max-h-96 overflow-auto"></div>
-          </div>
-        </div>
-      </details>
-    </section>
   </div>
 
   <!-- 모의 결제 모달 -->
@@ -72,13 +61,11 @@
     <div class="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
       <h3 class="text-xl font-bold mb-3">모의 결제</h3>
       <div id="paySummary" class="pill text-sm mb-3"></div>
-
       <div class="grid gap-3">
         <input id="payName" class="px-3 py-2 border rounded-lg" placeholder="이름 (예: 홍길동)" />
         <input id="payEmail" class="px-3 py-2 border rounded-lg" placeholder="이메일 (예: user@example.com)" />
-        <input id="payCard" class="px-3 py-2 border rounded-lg" placeholder="카드번호 (모의: 4111-1111-1111-1111)" />
+        <input id="payCard" class="px-3 py-2 border rounded-lg" placeholder="카드번호 (모의)" />
       </div>
-
       <div class="flex gap-2 mt-4">
         <button id="btnPay" class="flex-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">결제하기</button>
         <button id="btnCancel" class="flex-1 px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300">취소</button>
@@ -89,248 +76,99 @@
 
   <script>
     // ====== 설정 ======
+    const API_BASE = "https://travel-proxy.vercel.app/api"; // 🔹 여기에 본인 Vercel 프록시 주소 넣으세요
     const $ = (sel) => document.querySelector(sel);
     const KRW = (n) => Number(n||0).toLocaleString('ko-KR');
     const toISO = (d) => new Date(d).toISOString().slice(0,10);
-    const minutesToHM = (m)=>`${Math.floor(m/60)}시간 ${m%60}분`;
-    const cityForAirport=(c)=>({HND:'TYO',NRT:'TYO',GMP:'SEL',ICN:'SEL'})[c]||c;
 
-    // ====== 간단 자연어 파서 (프론트 폴백) ======
-    function parseNatural(textRaw){
-      const t=(textRaw||'').trim();
+    // ====== 간단 파서 (축약) ======
+    function parseNatural(text){
+      const t=(text||'').trim();
       const origin=/김포/.test(t)?'GMP':'ICN';
       const destination=/나리타/.test(t)?'NRT':/하네다|도쿄/.test(t)?'HND':'HND';
-      const adults=(t.match(/(성인|어른|adults?)\s*(\d+)/i)?.[2]||1)|0;
+      const adults=(t.match(/성인\s*(\d+)/)?.[1]||1)|0;
       const nights=(t.match(/(\d+)\s*박/)?.[1]||2)|0;
-
-      const Y=new Date().getFullYear();
-      const parseK=(s)=>{
-        if(!s) return null;
-        const a=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-        const b=s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
-        const c=s.match(/(\d{1,2})[./-](\d{1,2})/);
-        if(a) return new Date(+a[1],+a[2]-1,+a[3]);
-        if(b) return new Date(Y,+b[1]-1,+b[2]);
-        if(c) return new Date(Y,+c[1]-1,+c[2]);
-        return null;
-      };
-
-      let departDate=null, returnDate=null;
-      const pair=t.match(/(\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}).{0,8}?(귀국|리턴|돌아|~|부터|출발).{0,12}?(\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2})/);
-      if(pair){ departDate=parseK(pair[1]); returnDate=parseK(pair[3]); }
-      if(!departDate){
-        const dep=t.match(/(\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}).{0,3}출발/);
-        if(dep) departDate=parseK(dep[1]);
-      }
-      if(!returnDate && departDate){
-        const ret=t.match(/(\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}).{0,3}(귀국|복귀|리턴|돌아)/);
-        if(ret) returnDate=parseK(ret[1]);
-      }
-      if(!departDate || !returnDate){
-        const now=new Date(), dow=now.getDay();
-        const add=((5-dow+7)%7)||7; // 다음 금요일
-        departDate=new Date(now); departDate.setDate(now.getDate()+add);
-        returnDate=new Date(departDate); returnDate.setDate(departDate.getDate()+Math.max(1,nights||2));
-      }
-      return { origin, destination, departDate, returnDate, nights: nights||2, adults: adults||1, destinationCity: cityForAirport(destination) };
+      const now=new Date();
+      const departDate=new Date(now.getFullYear(), now.getMonth(), now.getDate()+3);
+      const returnDate=new Date(departDate); returnDate.setDate(departDate.getDate()+nights);
+      return { origin, destination, departDate, returnDate, nights, adults, destinationCity:"TYO" };
     }
 
-    // ====== Mock 데이터 (API 실패 시 폴백) ======
+    // ====== Mock ======
     function mockFlights(p){ return [
-      { id:"F1", airline:{code:"KE", name:"대한항공"}, origin:p.origin, destination:p.destination, departDate:toISO(p.departDate), returnDate:toISO(p.returnDate), departTime:"08:10", returnTime:"19:25", duration:140, stops:0, ontime:95, baggageIncluded:1, price:220000*p.adults },
-      { id:"F2", airline:{code:"JL", name:"JAL"},       origin:p.origin, destination:p.destination, departDate:toISO(p.departDate), returnDate:toISO(p.returnDate), departTime:"11:40", returnTime:"21:05", duration:155, stops:0, ontime:93, baggageIncluded:1, price:205000*p.adults },
-      { id:"F3", airline:{code:"NH", name:"ANA"},       origin:p.origin, destination:p.destination, departDate:toISO(p.departDate), returnDate:toISO(p.returnDate), departTime:"07:25", returnTime:"18:40", duration:310, stops:1, ontime:90, baggageIncluded:0, price:170000*p.adults },
-      { id:"F4", airline:{code:"7C", name:"제주항공"},  origin:p.origin, destination:p.destination, departDate:toISO(p.departDate), returnDate:toISO(p.returnDate), departTime:"15:00", returnTime:"20:30", duration:150, stops:0, ontime:88, baggageIncluded:0, price:160000*p.adults },
-      { id:"F5", airline:{code:"TW", name:"티웨이"},     origin:p.origin, destination:p.destination, departDate:toISO(p.departDate), returnDate:toISO(p.returnDate), departTime:"18:10", returnTime:"22:05", duration:145, stops:0, ontime:91, baggageIncluded:0, price:150000*p.adults },
-    ];}
+      { id:"F1", airline:{name:"대한항공(Mock)"}, origin:p.origin,destination:p.destination,departDate:toISO(p.departDate),returnDate:toISO(p.returnDate),duration:140,stops:0,price:220000 }
+    ]; }
     function mockHotels(p){ return [
-      { id:"H1", name:"신주쿠 스테이", area:"신주쿠", stars:4.5, rating:4.6, reviews:1320, refundable:true,  checkIn:toISO(p.departDate), checkOut:toISO(p.returnDate), nights:p.nights, pricePerNight:120000, taxesPerNight:15000 },
-      { id:"H2", name:"긴자 프리미어", area:"긴자", stars:5.0, rating:4.8, reviews:980,  refundable:false, checkIn:toISO(p.departDate), checkOut:toISO(p.returnDate), nights:p.nights, pricePerNight:190000, taxesPerNight:22000 },
-      { id:"H3", name:"아사쿠사 리버", area:"아사쿠사", stars:3.8, rating:4.3, reviews:740,  refundable:true,  checkIn:toISO(p.departDate), checkOut:toISO(p.returnDate), nights:p.nights, pricePerNight:90000,  taxesPerNight:12000 },
-      { id:"H4", name:"하네다 공항 호텔", area:"오타구", stars:3.6, rating:4.1, reviews:510,  refundable:true,  checkIn:toISO(p.departDate), checkOut:toISO(p.returnDate), nights:p.nights, pricePerNight:80000,  taxesPerNight:10000 },
-    ];}
+      { id:"H1", name:"신주쿠 호텔(Mock)", area:"도쿄", checkIn:toISO(p.departDate),checkOut:toISO(p.returnDate),nights:p.nights,pricePerNight:120000,taxesPerNight:15000,refundable:true }
+    ]; }
 
     // ====== 추천 계산 ======
-    function buildCombos(flights, hotels){
-      const combos=[];
-      for(const f of flights){
-        for(const h of hotels.slice(0,10)){
-          const hotelCost=(h.pricePerNight+h.taxesPerNight)* (h.nights || nightsFrom(h));
-          combos.push({ flight:f, hotel:h, total:(+f.price||0)+(+hotelCost||0) });
-        }
-      }
-      return combos;
+    function buildCombos(f,h){
+      const arr=[]; for(const ff of f){ for(const hh of h){
+        const hotelCost=(hh.pricePerNight+hh.taxesPerNight)*hh.nights;
+        arr.push({ flight:ff, hotel:hh, total:ff.price+hotelCost });
+      }} return arr;
     }
-    const nightsFrom=(h)=> {
-      const inD = h.checkIn? new Date(h.checkIn): null;
-      const outD= h.checkOut? new Date(h.checkOut): null;
-      return inD&&outD ? Math.max(1, Math.round((+outD - +inD)/86400000)) : 2;
-    };
-
-    function chooseThree(flights, hotels){
-      const combos=buildCombos(flights, hotels);
-      if(!combos.length) return {lowest:null, fastest:null, fewestStops:null};
-      const lowest=[...combos].sort((a,b)=>a.total-b.total)[0];
-      const fastest=[...combos].sort((a,b)=>a.flight.duration-b.flight.duration || a.total-b.total)[0];
-      const fewestStops=[...combos].sort((a,b)=>a.flight.stops-b.flight.stops || a.total-b.total)[0];
-      return {lowest, fastest, fewestStops};
+    function chooseThree(f,h){
+      const c=buildCombos(f,h); if(!c.length) return {};
+      return {
+        lowest:[...c].sort((a,b)=>a.total-b.total)[0],
+        fastest:[...c].sort((a,b)=>a.flight.duration-b.flight.duration)[0],
+        fewestStops:[...c].sort((a,b)=>a.flight.stops-b.flight.stops)[0],
+      };
     }
 
-    // ====== 렌더링 ======
-    function cardHTML(combo, tagText){
-      if(!combo) return `<div class="card"><div class="text-sm text-gray-500">결과 없음</div></div>`;
+    // ====== UI 렌더 ======
+    function cardHTML(combo,label){
+      if(!combo) return `<div class="card">결과 없음</div>`;
       const f=combo.flight, h=combo.hotel;
-      const hotelCost=(h.pricePerNight+h.taxesPerNight)*(h.nights||nightsFrom(h));
-      const total=(+f.price||0)+(+hotelCost||0);
-      return `
-        <div class="card flex flex-col">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-lg font-semibold">${tagText}</div>
-            <span class="badge bg-gray-100 text-gray-700">${f.stops?`환승 ${f.stops}회`:'직항'}</span>
-          </div>
-
-          <div class="pill mb-2">
-            <div class="flex items-center justify-between">
-              <div class="font-semibold">항공 (${f.airline?.name||'항공'})</div>
-              <span class="badge bg-blue-100 text-blue-800">${minutesToHM(f.duration)}</span>
-            </div>
-            <div class="text-sm text-gray-600 mt-1">${f.origin} → ${f.destination} · ${f.departDate} ${f.departTime||''}</div>
-            <div class="text-sm text-gray-600">귀국 ${f.destination} → ${f.origin} · ${f.returnDate} ${f.returnTime||''}</div>
-            <div class="mt-1 font-semibold">항공가 ₩${KRW(f.price)}</div>
-          </div>
-
-          <div class="pill mb-2">
-            <div class="flex items-center justify-between">
-              <div class="font-semibold">호텔 (${h.area})</div>
-              <span class="badge ${h.refundable?'bg-emerald-100 text-emerald-800':'bg-amber-100 text-amber-800'}">
-                ${h.refundable?'무료취소':'환불불가'}
-              </span>
-            </div>
-            <div class="text-sm text-gray-600 mt-1">${h.name} · ★${(+h.stars||4).toFixed(1)} · 평점 ${h.rating||'4.5'}</div>
-            <div class="text-sm text-gray-600">체크인 ${h.checkIn} ~ ${h.checkOut} (${h.nights||nightsFrom(h)}박)</div>
-            <div class="mt-1 font-semibold">1박 ₩${KRW(h.pricePerNight)} + 세금 ₩${KRW(h.taxesPerNight)}</div>
-          </div>
-
-          <div class="border-t pt-2">
-            <div class="flex items-center justify-between text-sm text-gray-600"><span>항공 합계</span><span>₩${KRW(f.price)}</span></div>
-            <div class="flex items-center justify-between text-sm text-gray-600"><span>호텔 합계</span><span>₩${KRW(hotelCost)}</span></div>
-            <div class="flex items-center justify-between font-bold mt-1"><span>총액</span><span>₩${KRW(total)}</span></div>
-          </div>
-
-          <button class="mt-3 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white"
-                  onclick='openPay(${JSON.stringify(JSON.stringify({f,h,total}))})'>예약 진행</button>
-        </div>
-      `;
+      const hotelCost=(h.pricePerNight+h.taxesPerNight)*h.nights;
+      const total=f.price+hotelCost;
+      return `<div class="card flex flex-col">
+        <h3 class="text-lg font-semibold mb-2">${label}</h3>
+        <div class="pill mb-2"><b>항공</b> ${f.airline.name} ₩${KRW(f.price)}</div>
+        <div class="pill mb-2"><b>호텔</b> ${h.name} ₩${KRW(h.pricePerNight)}</div>
+        <div class="font-bold">총액 ₩${KRW(total)}</div>
+        <button class="mt-2 px-4 py-2 bg-emerald-600 text-white rounded-lg" onclick='openPay(${JSON.stringify(JSON.stringify({f,h,total}))})'>예약 진행</button>
+      </div>`;
     }
 
-    function renderLists(flights, hotels){
-      const $f=$("#flightList"), $h=$("#hotelList"), $wrap=$("#lists");
-      $f.innerHTML = flights.map(f=>`
-        <div class="pill">
-          <div class="flex items-center justify-between">
-            <div class="font-semibold">${f.airline?.name||'항공'}</div>
-            <span class="badge bg-gray-100 text-gray-700">${f.stops?`환승 ${f.stops}회`:'직항'}</span>
-          </div>
-          <div class="text-sm text-gray-600">${f.origin}→${f.destination} ${f.departDate} ${f.departTime||''}</div>
-          <div class="text-sm text-gray-600">복귀 ${f.destination}→${f.origin} ${f.returnDate} ${f.returnTime||''}</div>
-          <div class="text-sm">소요 ${minutesToHM(f.duration)} / ₩${KRW(f.price)}</div>
-        </div>`).join("");
-      $h.innerHTML = hotels.map(h=>`
-        <div class="pill">
-          <div class="flex items-center justify-between">
-            <div class="font-semibold">${h.name} (${h.area})</div>
-            <span class="badge ${h.refundable?'bg-emerald-100 text-emerald-800':'bg-amber-100 text-amber-800'}">
-              ${h.refundable?'무료취소':'환불불가'}
-            </span>
-          </div>
-          <div class="text-sm text-gray-600">★${(+h.stars||4).toFixed(1)} · 평점 ${h.rating||'4.5'} · 리뷰 ${KRW(h.reviews||200)}</div>
-          <div class="text-sm">₩${KRW(h.pricePerNight)} + 세금 ₩${KRW(h.taxesPerNight)} (박당)</div>
-        </div>`).join("");
-      $wrap.classList.remove("hidden");
-    }
-
-    // ====== 결제 모달 ======
-    window.openPay = (jsonStr) => {
-      const {f,h,total} = JSON.parse(jsonStr);
-      $("#paySummary").innerHTML = `
-        <div><b>항공</b> ${f.airline?.name||'항공'} · ${f.origin}→${f.destination} (${f.departDate})</div>
-        <div><b>호텔</b> ${h.name} · ${h.checkIn}~${h.checkOut}</div>
-        <div class="mt-1"><b>결제금액</b> ₩${KRW(total)}</div>
-      `;
-      $("#payMsg").textContent="";
+    window.openPay=(jsonStr)=>{
+      const {f,h,total}=JSON.parse(jsonStr);
+      $("#paySummary").innerHTML=`<div><b>${f.airline.name}</b> · ${f.origin}→${f.destination}</div>
+      <div><b>${h.name}</b> ${h.checkIn}~${h.checkOut}</div><div>총액 ₩${KRW(total)}</div>`;
       $("#payModal").classList.remove("hidden");
       $("#payModal").classList.add("flex");
-      $("#btnPay").onclick = () => {
-        const ok = ($("#payName").value.trim() && $("#payEmail").value.includes("@") && $("#payCard").value.replace(/[^0-9]/g,"").length>=12);
-        $("#payMsg").textContent = ok ? "✅ 결제가 완료되었습니다 (모의)" : "⚠️ 입력값을 확인해주세요";
-        if(ok) setTimeout(closePay, 1000);
-      };
-      $("#btnCancel").onclick = closePay;
-      function closePay(){
-        $("#payModal").classList.add("hidden");
-        $("#payModal").classList.remove("flex");
-      }
+      $("#btnPay").onclick=()=>{$("#payMsg").textContent="✅ 모의 결제 완료"; setTimeout(()=>$("#payModal").classList.add("hidden"),1000);}
+      $("#btnCancel").onclick=()=>$("#payModal").classList.add("hidden");
     };
 
-    // ====== API 호출 with 폴백 ======
-    async function safeJSON(url){
-      try{
-        const r = await fetch(url, {mode:"cors"});
-        if(!r.ok) throw new Error(`HTTP ${r.status}`);
-        return { ok:true, json: await r.json() };
-      }catch(e){ return { ok:false, error: String(e.message||e) }; }
+    async function safeFetch(url){
+      try{const r=await fetch(url); if(!r.ok) throw new Error(); return await r.json();}catch(e){return null;}
     }
 
     async function run(){
-      const API_BASE = $("#apiBase").value.trim();
-      const q = $("#query").value;
-      const parsed = parseNatural(q);
-      $("#parsedBox").textContent = JSON.stringify({
-        origin: parsed.origin, destination: parsed.destination,
-        checkIn: toISO(parsed.departDate),
-        checkOut: toISO(parsed.returnDate),
-        nights: parsed.nights, adults: parsed.adults,
-        destinationCity: parsed.destinationCity
-      }, null, 2);
-
-      $("#status").textContent = "검색 중…";
+      const parsed=parseNatural($("#query").value);
+      $("#parsedBox").textContent=JSON.stringify(parsed,null,2);
+      $("#status").innerHTML='<span class="loader"></span> 검색 중…';
       $("#error").classList.add("hidden");
-      $("#recommend").innerHTML = "";
+      $("#recommend").innerHTML="";
 
-      // 1) API 호출 (없으면 mock)
-      let flights = [], hotels = [];
-      if(API_BASE){
-        const fURL = `${API_BASE}/flights?origin=${parsed.origin}&destination=${parsed.destination}&departDate=${toISO(parsed.departDate)}&returnDate=${toISO(parsed.returnDate)}&adults=${parsed.adults}&currencyCode=KRW`;
-        const hURL = `${API_BASE}/hotels?destination=${parsed.destinationCity}&checkIn=${toISO(parsed.departDate)}&checkOut=${toISO(parsed.returnDate)}&adults=${parsed.adults}`;
-        const [fr, hr] = await Promise.all([safeJSON(fURL), safeJSON(hURL)]);
-        if(fr.ok) flights = fr.json.flights || [];
-        if(hr.ok) hotels  = hr.json.hotels  || [];
-        if(!fr.ok || !hr.ok){
-          $("#error").textContent = `API 실패 → Mock 데이터로 대체합니다. ${fr.ok?"":("flights: "+fr.error+" ")}${hr.ok?"":("hotels: "+hr.error)}`;
-          $("#error").classList.remove("hidden");
-        }
-      }
-      if(!flights.length) flights = mockFlights(parsed);
-      if(!hotels.length)  hotels  = mockHotels(parsed);
+      let flights=(await safeFetch(`${API_BASE}/flights?origin=${parsed.origin}&destination=${parsed.destination}&departDate=${toISO(parsed.departDate)}&returnDate=${toISO(parsed.returnDate)}&adults=${parsed.adults}`))?.flights||[];
+      let hotels=(await safeFetch(`${API_BASE}/hotels?destination=${parsed.destinationCity}&checkIn=${toISO(parsed.departDate)}&checkOut=${toISO(parsed.returnDate)}&adults=${parsed.adults}`))?.hotels||[];
 
-      // 2) 후보 리스트 렌더 (검증용)
-      renderLists(flights, hotels);
+      if(!flights.length) flights=mockFlights(parsed);
+      if(!hotels.length) hotels=mockHotels(parsed);
 
-      // 3) 추천 3종 계산
-      const {lowest, fastest, fewestStops} = chooseThree(flights, hotels);
-
-      // 4) 추천 카드 렌더
-      $("#recommend").innerHTML =
-        cardHTML(lowest, "💰 최저가") +
-        cardHTML(fastest, "⚡ 최단시간") +
-        cardHTML(fewestStops, "↔ 최저환승");
-
-      $("#status").textContent = "완료";
+      const {lowest,fastest,fewestStops}=chooseThree(flights,hotels);
+      $("#recommend").innerHTML=
+        cardHTML(lowest,"💰 최저가")+
+        cardHTML(fastest,"⚡ 최단시간")+
+        cardHTML(fewestStops,"↔ 최저환승");
+      $("#status").textContent="검색 완료";
     }
 
-    // 초기값/이벤트
-    $("#apiBase").value = ""; // 프록시 서버가 있으면 https://.../api 로 설정
-    $("#btnSearch").addEventListener("click", run);
+    $("#btnSearch").addEventListener("click",run);
   </script>
 </body>
 </html>
