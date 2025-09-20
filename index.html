@@ -18,12 +18,13 @@
       display: inline-block;
     }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
+    pre { background:#f8fafc; padding:8px; border-radius:8px; font-size:0.85rem; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-6xl mx-auto p-6">
     <h1 class="text-3xl font-bold mb-2">여행 AI Agent</h1>
-    <p class="text-gray-600 mb-6">자연어로 여러 도시 요청을 입력하세요. 각 도시별 <b>최저가·최단시간·최저환승</b> 추천을 보여줍니다.</p>
+    <p class="text-gray-600 mb-6">자연어로 여러 도시 요청을 입력하세요. 각 요청별 <b>파싱 결과</b>와 <b>추천 3종</b>을 보여줍니다.</p>
 
     <!-- 입력 -->
     <section class="card">
@@ -45,7 +46,7 @@
     const KRW = (n)=>Number(n||0).toLocaleString('ko-KR');
     const toISO=(d)=>new Date(d).toISOString().slice(0,10);
 
-    // 간단 파서 (여러 도시 입력 시에도 활용)
+    // 간단 파서
     function parseNatural(text){
       const t=(text||'').trim();
       const origin=/김포/.test(t)?'GMP':'ICN';
@@ -104,7 +105,18 @@
       for(const line of lines){
         const parsed=parseNatural(line);
         const section=document.createElement("div");
-        section.innerHTML=`<h2 class="text-xl font-bold mb-3">🔎 ${parsed.raw}</h2>
+        section.innerHTML=`
+          <h2 class="text-xl font-bold mb-2">🔎 요청: ${parsed.raw}</h2>
+          <details class="mb-3"><summary class="cursor-pointer text-sm text-gray-600">파싱 결과 보기</summary>
+            <pre>${JSON.stringify({
+              origin: parsed.origin,
+              destination: parsed.destination,
+              checkIn: toISO(parsed.departDate),
+              checkOut: toISO(parsed.returnDate),
+              nights: parsed.nights,
+              adults: parsed.adults
+            }, null, 2)}</pre>
+          </details>
           <div id="cards-${parsed.origin}-${parsed.destination}" class="grid md:grid-cols-3 gap-4"></div>
           <div id="err-${parsed.origin}-${parsed.destination}" class="text-red-600 mt-2 hidden"></div>`;
         $("#results").appendChild(section);
