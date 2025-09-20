@@ -3,12 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>여행 AI Agent — AI 파싱 버전</title>
+  <title>여행 AI Agent</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .card { @apply bg-white border border-gray-200 rounded-2xl p-4 shadow-sm; }
     .pill { @apply border border-gray-200 bg-gray-50 rounded-xl p-3; }
-    .loader { border:4px solid #f3f3f3; border-top:4px solid #6366f1; border-radius:50%; width:28px; height:28px; animation:spin 1s linear infinite; display:inline-block; }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #6366f1;
+      border-radius: 50%;
+      width: 28px; height: 28px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
     pre { background:#f8fafc; padding:8px; border-radius:8px; font-size:0.85rem; overflow:auto; }
   </style>
@@ -16,27 +23,32 @@
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-6xl mx-auto p-6">
     <h1 class="text-3xl font-bold mb-2">여행 AI Agent</h1>
-    <p class="text-gray-600 mb-6">AI Agent가 자연어를 JSON으로 파싱해서 <b>최저가·최단시간·최저환승</b> 추천을 보여줍니다.</p>
+    <p class="text-gray-600 mb-6">
+      AI Agent가 자연어 요청을 분석해 <b>최저가 · 최단시간 · 최저환승</b> 추천을 보여줍니다.
+    </p>
 
+    <!-- 입력 -->
     <section class="card">
       <textarea id="query" rows="3" class="w-full p-3 border rounded-xl"
         placeholder="예) 인천에서 도쿄 2박 3일, 성인 2명, 10월 3일 출발 10월 5일 귀국"></textarea>
       <div class="mt-3 flex items-center gap-3">
-        <button id="btnSearch" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white">검색 실행</button>
+        <button id="btnSearch" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white">
+          검색 실행
+        </button>
         <span id="status" class="text-sm text-gray-500"></span>
       </div>
     </section>
 
+    <!-- 결과 -->
     <div id="results" class="mt-6"></div>
   </div>
 
   <script>
-    const API_BASE = "https://travel-proxy.vercel.app/api"; // 본인 Vercel API 주소
+    // 🔹 반드시 본인 Vercel API 주소로 교체하세요
+    const API_BASE = "https://travel-proxy.vercel.app/api";
     const $ = (sel)=>document.querySelector(sel);
     const KRW = (n)=>Number(n||0).toLocaleString('ko-KR');
-    const toISO=(d)=>new Date(d).toISOString().slice(0,10);
 
-    // 카드 렌더링
     function cardHTML(combo,label){
       if(!combo) return `<div class="card">❌ 결과 없음</div>`;
       const f=combo.flight,h=combo.hotel;
@@ -49,20 +61,12 @@
       </div>`;
     }
 
-    async function fetchData(parsed){
-      const fURL=`${API_BASE}/flights?origin=${parsed.origin}&destination=${parsed.destination}&departDate=${parsed.departDate}&returnDate=${parsed.returnDate}&adults=${parsed.adults}`;
-      const hURL=`${API_BASE}/hotels?destination=${parsed.destination}&checkIn=${parsed.departDate}&checkOut=${parsed.returnDate}&adults=${parsed.adults}`;
-      const [fr,hr]=await Promise.all([fetch(fURL),fetch(hURL)]);
-      if(!fr.ok || !hr.ok) throw new Error("API 호출 실패");
-      return { flights:(await fr.json()).flights||[], hotels:(await hr.json()).hotels||[], fURL,hURL };
-    }
-
     async function run(){
       $("#status").innerHTML='<span class="loader"></span> 검색 중…';
       $("#results").innerHTML="";
 
       try {
-        // 🔹 1. AI 파서 호출
+        // 1. AI Agent 파싱 요청
         const q=$("#query").value;
         const parseRes=await fetch(`${API_BASE}/parse`,{
           method:"POST",
@@ -72,7 +76,7 @@
         if(!parseRes.ok) throw new Error("AI 파싱 실패");
         const parsed=await parseRes.json();
 
-        // 🔹 2. 파싱 결과 표시
+        // 2. 파싱 결과 표시
         const section=document.createElement("div");
         section.innerHTML=`
           <h2 class="text-xl font-bold mb-2">요청: ${q}</h2>
@@ -84,14 +88,20 @@
           <div id="err" class="text-red-600 mt-2 hidden"></div>`;
         $("#results").appendChild(section);
 
-        // 🔹 3. API 호출
-        const {flights,hotels,fURL,hURL}=await fetchData(parsed);
+        // 3. Flights + Hotels API 호출
+        const fURL=`${API_BASE}/flights?origin=${parsed.origin}&destination=${parsed.destination}&departDate=${parsed.departDate}&returnDate=${parsed.returnDate}&adults=${parsed.adults}`;
+        const hURL=`${API_BASE}/hotels?destination=${parsed.destination}&checkIn=${parsed.departDate}&checkOut=${parsed.returnDate}&adults=${parsed.adults}`;
         section.querySelector("#urls").innerHTML=
           `<b>Flights API:</b> <code>${fURL}</code><br><b>Hotels API:</b> <code>${hURL}</code>`;
 
+        const [fr,hr]=await Promise.all([fetch(fURL),fetch(hURL)]);
+        if(!fr.ok || !hr.ok) throw new Error("API 호출 실패");
+
+        const flights=(await fr.json()).flights||[];
+        const hotels=(await hr.json()).hotels||[];
         if(!flights.length||!hotels.length) throw new Error("검색 결과 없음");
 
-        // 추천 계산
+        // 4. 추천 계산
         const combos=[]; for(const f of flights){ for(const h of hotels){
           const hotelCost=(h.pricePerNight+h.taxesPerNight)*h.nights;
           combos.push({flight:f,hotel:h,total:f.price+hotelCost});
