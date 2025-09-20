@@ -18,13 +18,15 @@
     }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
     pre { background:#f8fafc; padding:8px; border-radius:8px; font-size:0.85rem; overflow:auto; }
+    code { background:#f1f5f9; padding:2px 4px; border-radius:4px; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-6xl mx-auto p-6">
     <h1 class="text-3xl font-bold mb-2">여행 AI Agent</h1>
     <p class="text-gray-600 mb-6">
-      AI Agent가 자연어 요청을 분석해 <b>최저가 · 최단시간 · 최저환승</b> 추천을 보여줍니다.
+      AI Agent가 자연어 요청을 분석해 <b>파싱 결과</b>와 <b>API 호출 URL</b>, 그리고 
+      <b>최저가 · 최단시간 · 최저환승</b> 추천을 보여줍니다.
     </p>
 
     <!-- 입력 -->
@@ -76,11 +78,12 @@
         if(!parseRes.ok) throw new Error("AI 파싱 실패");
         const parsed=await parseRes.json();
 
-        // 2. 파싱 결과 표시
+        // 2. 결과 블록 생성 (파싱 결과 표시 포함)
         const section=document.createElement("div");
         section.innerHTML=`
           <h2 class="text-xl font-bold mb-2">요청: ${q}</h2>
-          <details class="mb-3" open><summary class="cursor-pointer text-sm text-gray-600">파싱 결과</summary>
+          <details class="mb-3" open>
+            <summary class="cursor-pointer text-sm text-gray-600">파싱 결과</summary>
             <pre>${JSON.stringify(parsed,null,2)}</pre>
           </details>
           <div id="urls" class="mb-3 text-xs text-gray-700"></div>
@@ -88,12 +91,14 @@
           <div id="err" class="text-red-600 mt-2 hidden"></div>`;
         $("#results").appendChild(section);
 
-        // 3. Flights + Hotels API 호출
+        // 3. Flights + Hotels API URL 구성
         const fURL=`${API_BASE}/flights?origin=${parsed.origin}&destination=${parsed.destination}&departDate=${parsed.departDate}&returnDate=${parsed.returnDate}&adults=${parsed.adults}`;
         const hURL=`${API_BASE}/hotels?destination=${parsed.destination}&checkIn=${parsed.departDate}&checkOut=${parsed.returnDate}&adults=${parsed.adults}`;
         section.querySelector("#urls").innerHTML=
-          `<b>Flights API:</b> <code>${fURL}</code><br><b>Hotels API:</b> <code>${hURL}</code>`;
+          `<b>Flights API:</b> <code>${fURL}</code><br>
+           <b>Hotels API:</b> <code>${hURL}</code>`;
 
+        // 4. 실제 API 호출
         const [fr,hr]=await Promise.all([fetch(fURL),fetch(hURL)]);
         if(!fr.ok || !hr.ok) throw new Error("API 호출 실패");
 
@@ -101,7 +106,7 @@
         const hotels=(await hr.json()).hotels||[];
         if(!flights.length||!hotels.length) throw new Error("검색 결과 없음");
 
-        // 4. 추천 계산
+        // 5. 추천 계산
         const combos=[]; for(const f of flights){ for(const h of hotels){
           const hotelCost=(h.pricePerNight+h.taxesPerNight)*h.nights;
           combos.push({flight:f,hotel:h,total:f.price+hotelCost});
