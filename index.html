@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>여행 AI Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-2">여행 AI Agent</h1>
+    <p class="text-gray-600 mb-6">자연어로 요청하면 항공/호텔 추천을 보여줍니다.</p>
+
+    <textarea id="query" rows="3"
+      class="w-full p-3 border rounded-lg mb-4"
+      placeholder="예) 인천에서 도쿄 왕복, 11월 2일 출발 11월 4일 귀국, 2박, 성인 2명"></textarea>
+
+    <button onclick="search()"
+      class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+      검색 실행
+    </button>
+
+    <div id="error" class="text-red-500 mt-4"></div>
+    <div id="loading" class="text-indigo-600 mt-4 hidden">⏳ 검색 중...</div>
+
+    <div id="results" class="grid md:grid-cols-3 gap-6 mt-6"></div>
+  </div>
+
+  <script>
+    const API_BASE = "https://your-mcp-server.vercel.app/mcp"; // MCP 서버 주소
+
+    async function search() {
+      const query = document.getElementById("query").value;
+      const loading = document.getElementById("loading");
+      const error = document.getElementById("error");
+      const results = document.getElementById("results");
+
+      loading.classList.remove("hidden");
+      error.textContent = "";
+      results.innerHTML = "";
+
+      try {
+        const res = await fetch(`${API_BASE}/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: query })
+        });
+
+        if (!res.ok) throw new Error("MCP 서버 호출 실패");
+        const data = await res.json();
+
+        const plans = [
+          { key: "lowest", label: "💰 최저가" },
+          { key: "fastest", label: "⚡ 최단시간" },
+          { key: "safest", label: "🛡 최소리스크" }
+        ];
+
+        plans.forEach(p => {
+          const plan = data[p.key];
+          if (!plan) return;
+          const total = plan.flight.price +
+            (plan.hotel.pricePerNight + plan.hotel.taxesPerNight) * (plan.hotel.nights || 1);
+
+          results.innerHTML += `
+            <div class="bg-white shadow-md rounded-xl p-4 flex flex-col">
+              <h3 class="text-xl font-semibold mb-2">${p.label}</h3>
+              <div class="border p-3 rounded-lg mb-3">
+                <p class="font-bold">${plan.flight.airline?.name || "항공편"}</p>
+                <p class="text-sm">${plan.flight.origin} → ${plan.flight.destination}</p>
+                <p class="text-sm">출발: ${plan.flight.departDate} ${plan.flight.departTime}</p>
+                <p class="text-sm">귀국: ${plan.flight.returnDate} ${plan.flight.returnTime}</p>
+                <p class="font-semibold mt-1">₩${plan.flight.price.toLocaleString()}</p>
+              </div>
+              <div class="border p-3 rounded-lg mb-3">
+                <p class="font-bold">${plan.hotel.name}</p>
+                <p class="text-sm">지역: ${plan.hotel.area}</p>
+                <p class="text-sm">체크인: ${plan.hotel.checkIn} ~ ${plan.hotel.checkOut}</p>
+                <p class="font-semibold mt-1">
+                  1박 ₩${plan.hotel.pricePerNight.toLocaleString()} + 세금 ₩${plan.hotel.taxesPerNight.toLocaleString()}
+                </p>
+              </div>
+              <div class="mt-auto pt-4">
+                <button onclick="alert('모의 결제 완료!')"
+                  class="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  예약 진행
+                </button>
+              </div>
+              <p class="mt-2 font-bold">총액: ₩${total.toLocaleString()}</p>
+            </div>
+          `;
+        });
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        loading.classList.add("hidden");
+      }
+    }
+  </script>
+</body>
+</html>
