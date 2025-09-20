@@ -18,13 +18,13 @@
       display: inline-block;
     }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
-    pre { background:#f8fafc; padding:8px; border-radius:8px; font-size:0.85rem; }
+    pre { background:#f8fafc; padding:8px; border-radius:8px; font-size:0.85rem; overflow:auto; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-6xl mx-auto p-6">
     <h1 class="text-3xl font-bold mb-2">여행 AI Agent</h1>
-    <p class="text-gray-600 mb-6">자연어로 여러 도시 요청을 입력하세요. 각 요청별 <b>파싱 결과</b>와 <b>추천 3종</b>을 보여줍니다.</p>
+    <p class="text-gray-600 mb-6">자연어로 여러 도시 요청을 입력하세요. 각 요청별 <b>파싱 결과</b> · <b>API URL</b> · <b>추천 3종</b>을 보여줍니다.</p>
 
     <!-- 입력 -->
     <section class="card">
@@ -93,7 +93,7 @@
       const hURL=`${API_BASE}/hotels?destination=${parsed.destinationCity}&checkIn=${toISO(parsed.departDate)}&checkOut=${toISO(parsed.returnDate)}&adults=${parsed.adults}`;
       const [fr,hr]=await Promise.all([fetch(fURL),fetch(hURL)]);
       if(!fr.ok || !hr.ok) throw new Error("API 호출 실패");
-      return { flights:(await fr.json()).flights||[], hotels:(await hr.json()).hotels||[] };
+      return { flights:(await fr.json()).flights||[], hotels:(await hr.json()).hotels||[], fURL, hURL };
     }
 
     async function run(){
@@ -117,12 +117,17 @@
               adults: parsed.adults
             }, null, 2)}</pre>
           </details>
+          <div id="urls-${parsed.origin}-${parsed.destination}" class="mb-3 text-xs text-gray-700"></div>
           <div id="cards-${parsed.origin}-${parsed.destination}" class="grid md:grid-cols-3 gap-4"></div>
           <div id="err-${parsed.origin}-${parsed.destination}" class="text-red-600 mt-2 hidden"></div>`;
         $("#results").appendChild(section);
 
         try {
-          const {flights,hotels}=await fetchData(parsed);
+          const {flights,hotels,fURL,hURL}=await fetchData(parsed);
+          // 호출 URL 표시
+          section.querySelector(`#urls-${parsed.origin}-${parsed.destination}`).innerHTML=
+            `<b>Flights API:</b> <code>${fURL}</code><br><b>Hotels API:</b> <code>${hURL}</code>`;
+
           if(!flights.length||!hotels.length) throw new Error("검색 결과 없음");
           const {lowest,fastest,fewestStops}=chooseThree(flights,hotels);
           section.querySelector(`#cards-${parsed.origin}-${parsed.destination}`).innerHTML=
